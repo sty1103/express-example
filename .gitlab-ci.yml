@@ -1,0 +1,80 @@
+stages:
+  - build_push
+  - deploy
+  
+image: docker:19.03.12
+services:
+  - docker:19.03.12-dind
+variables:
+  GCP_PROJECT_ID: project-ls-373705
+  GKE_CLUSTER_NAME: lesson-cluster
+  GKE_CLUSTER_ZONE: asia-northeast3-a
+  REGISTRY_HOSTNAME: gcr.io/${GCP_PROJECT_ID}
+  DOCKER_HOST: tcp://docker:2375/
+  DOCKER_TLS_CERTDIR: ""
+
+build_push_dev:
+  stage: build_push
+  only:
+    - dev
+  variables:
+    DOCKER_IMAGE_NAME: ${CI_PROJECT_NAME}-dev
+  before_script:
+    - docker info
+    - echo "$GKE_ACCESS_KEY" > key.json
+    - echo "$DEV_DB_ENV" >> .env.development
+    - docker login -u _json_key --password-stdin https://gcr.io < key.json
+  script:
+    - docker build --build-arg NODE_ENV=development --tag $REGISTRY_HOSTNAME/$DOCKER_IMAGE_NAME:$CI_COMMIT_SHORT_SHA .
+    - docker push $REGISTRY_HOSTNAME/$DOCKER_IMAGE_NAME:$CI_COMMIT_SHORT_SHA
+
+deploy_to_dev:
+  stage: deploy
+  only:
+    - dev
+  image: google/cloud-sdk
+  script:
+    - export USE_GKE_GCLOUD_AUTH_PLUGIN=True
+    - echo "$GKE_ACCESS_KEY" > key.json
+    - gcloud auth activate-service-account --key-file=key.json
+    - gcloud config set project $GCP_PROJECT_ID
+    - gcloud config set container/cluster $GKE_CLUSTER_NAME
+    - gcloud config set compute/zone $GKE_CLUSTER_ZONE
+    - gcloud container clusters get-credentials $GKE_CLUSTER_NAME --zone $GKE_CLUSTER_ZONE --project $GCP_PROJECT_ID
+    - sed -i "s/<PROJECT_ID>/${GCP_PROJECT_ID}/g" deployment.dev.yaml
+    - sed -i "s/<DOCKER_IMAGE_NAME>/backend-api-lesson-dev/g" deployment.dev.yaml
+    - sed -i "s/<DOCKER_IMAGE_TAG>/${CI_COMMIT_SHORT_SHA}/g" deployment.dev.yaml
+    - kubectl apply -f deployment.dev.yaml
+    - kubectl apply -f database.dev.yaml
+    - kubectl apply -f ingress.yaml
+
+# build_push_prod:
+#   stage: build_push
+#   only:
+#     - main
+#   variables:
+#     DOCKER_IMAGE_NAME: ${CI_PROJECT_NAME}-prod
+#   before_script:
+#     - docker info
+#     - echo "$GKE_ACCESS_KEY"
+#     - echo "$GKE_ACCESS_KEY" > key.json
+#     - docker login -u _json_key --password-stdin https://gcr.io < key.json
+#   script:
+#     - docker build --tag $REGISTRY_HOSTNAME/$DOCKER_IMAGE_NAME:$CI_COMMIT_SHORT_SHA .
+#     - docker push $REGISTRY_HOSTNAME/$DOCKER_IMAGE_NAME:$CI_COMMIT_SHORT_SHA
+
+# deploy_to_prod:
+#   stage: deploy
+#   only:
+#     - main
+#   image: google/cloud-sdk
+#   script:
+#     - export USE_GKE_GCLOUD_AUTH_PLUGIN=True
+#     - echo "$GKE_ACCESS_KEY" > key.json
+#     - gcloud auth activate-service-account --key-file=key.json
+#     - gcloud config set project $GCP_PROJECT_ID
+#     - gcloud config set container/cluster $GKE_CLUSTER_NAME
+#     - gcloud config set compute/zone $GKE_CLUSTER_ZONE
+#     - gcloud container clusters get-credentials $GKE_CLUSTER_NAME --zone $GKE_CLUSTER_ZONE --project $GCP_PROJECT_ID
+#     - sed -i "s/<DOCKER_IMAGE_TAG>/${CI_COMMIT_SHORT_SHA}/g" deployment.prod.yaml
+#     - kubectl apply -f deployment.prod.yaml

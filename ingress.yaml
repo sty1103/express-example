@@ -1,0 +1,46 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: lesson-ingress
+  annotations:
+    kubernetes.io/ingress.class: gce
+    kubernetes.io/ingress.global-static-ip-name: lesson-service-ip
+    networking.gke.io/managed-certificates: managed-cert
+    nginx.ingress.kubernetes.io/proxy_body_size: 500M
+spec:
+  rules:
+  - host: dev.lesson-notes.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontweb-lesson-dev-svc
+            port:
+              number: 80
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: backend-api-lesson-dev-svc
+            port:
+              number: 80
+      
+  # - host: lesson-notes.com
+  #   http:
+  #     paths:
+  #     - pathType: Prefix
+  #       path: /
+  #       backend:
+  #         service:
+  #           name: frontweb-lesson-prod-svc
+  #           port:
+  #             number: 80
+  #     - pathType: Prefix
+  #       path: /api
+  #       backend:
+  #         service:
+  #           name: backend-api-lesson-prod-svc
+  #           port:
+  #             number: 80
